@@ -7,6 +7,20 @@
 using namespace duckdb;
 using namespace std;
 
+TEST_CASE("Aggr Dummy", "[aggregate]") {
+	unique_ptr<QueryResult> result;
+	DuckDB db(nullptr);
+	Connection con(db);
+
+	REQUIRE_NO_FAIL(con.Query("CREATE TABLE test (g INTEGER, p INTEGER)"));
+	REQUIRE_NO_FAIL(con.Query("INSERT INTO test VALUES (42, 1), (42, 2), (43, 4)"));
+
+	result = con.Query("SELECT g, SUM(p)::integer s FROM test GROUP BY g ORDER BY g");
+	result->Print();
+	REQUIRE(CHECK_COLUMN(result, 0, {42, 43}));
+	REQUIRE(CHECK_COLUMN(result, 1, {3, 4}));
+}
+
 TEST_CASE("Test BIT_AND operator", "[aggregate]") {
 	unique_ptr<QueryResult> result;
 	DuckDB db(nullptr);
