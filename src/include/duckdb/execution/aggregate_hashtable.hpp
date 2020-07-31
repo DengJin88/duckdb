@@ -87,15 +87,22 @@ private:
 	//! The size of the payload (aggregations) in bytes
 	idx_t payload_width;
 	//! The total tuple size
-	idx_t tuple_size;
-	//! The capacity of the HT. This can be increased using
+	//idx_t tuple_size;
+    idx_t tuple1_size;
+    idx_t tuple2_size;
+
+    //! The capacity of the HT. This can be increased using
 	//! SuperLargeHashTable::Resize
 	idx_t capacity;
 	//! The amount of entries stored in the HT currently
 	idx_t entries;
 	//! The data of the HT
-	data_ptr_t data;
-	//! The endptr of the hashtable
+//	data_ptr_t data;
+
+    data_ptr_t data1;
+    data_ptr_t data2;
+
+    //! The endptr of the hashtable
 	data_ptr_t endptr;
 	//! Whether or not the HT has to support parallel insertion operations
 	bool parallel = false;
@@ -116,7 +123,10 @@ private:
 	SuperLargeHashTable(const SuperLargeHashTable &) = delete;
 
 	//! unique_ptr to indicate the ownership
-	unique_ptr<data_t[]> owned_data;
+//	unique_ptr<data_t[]> owned_data;
+    unique_ptr<data_t[]> owned_data1;
+    unique_ptr<data_t[]> owned_data2;
+
 
 private:
 	void Destroy();

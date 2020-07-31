@@ -32,11 +32,12 @@ vector<AggregateObject> AggregateObject::CreateAggregateObjects(vector<BoundAggr
 	return aggregates;
 }
 
+
 SuperLargeHashTable::SuperLargeHashTable(idx_t initial_capacity, vector<TypeId> group_types,
                                          vector<TypeId> payload_types, vector<AggregateObject> aggregate_objects,
                                          bool parallel)
     : aggregates(move(aggregate_objects)), group_types(group_types), payload_types(payload_types), group_width(0),
-      payload_width(0), capacity(0), entries(0), data(nullptr), parallel(parallel) {
+      payload_width(0), capacity(0), entries(0), data1(nullptr), data2(nullptr), parallel(parallel) {
 	// HT tuple layout is as follows:
 	// [FLAG][GROUPS][PAYLOAD]
 	// [FLAG] is the state of the tuple in memory
@@ -81,8 +82,11 @@ SuperLargeHashTable::SuperLargeHashTable(idx_t initial_capacity, vector<TypeId> 
 		}
 	}
 
-	tuple_size = FLAG_SIZE + (group_width + payload_width);
-	Resize(initial_capacity);
+//	tuple_size = FLAG_SIZE + (group_width + payload_width);
+    tuple1_size = FLAG_SIZE + sizeof(data_ptr_t);
+    tuple2_size = sizeof(hash_t) + (group_width + payload_width);
+
+    Resize(initial_capacity);
 }
 
 SuperLargeHashTable::~SuperLargeHashTable() {
@@ -104,36 +108,38 @@ void SuperLargeHashTable::CallDestructors(Vector &state_vector, idx_t count) {
 }
 
 void SuperLargeHashTable::Destroy() {
-	if (!data) {
-		return;
-	}
-	// check if there is a destructor
-	bool has_destructor = false;
-	for (idx_t i = 0; i < aggregates.size(); i++) {
-		if (aggregates[i].function.destructor) {
-			has_destructor = true;
-		}
-	}
-	if (!has_destructor) {
-		return;
-	}
-	// there are aggregates with destructors: loop over the hash table
-	// and call the destructor method for each of the aggregates
-	data_ptr_t data_pointers[STANDARD_VECTOR_SIZE];
-	Vector state_vector(TypeId::POINTER, (data_ptr_t)data_pointers);
-	idx_t count = 0;
-	for (data_ptr_t ptr = data, end = data + capacity * tuple_size; ptr < end; ptr += tuple_size) {
-		if (*ptr == FULL_CELL) {
-			// found entry
-			data_pointers[count++] = ptr + FLAG_SIZE + group_width;
-			if (count == STANDARD_VECTOR_SIZE) {
-				// vector is full: call the destructors
-				CallDestructors(state_vector, count);
-				count = 0;
-			}
-		}
-	}
-	CallDestructors(state_vector, count);
+	// FIXME
+//
+//	if (!data1) {
+//		return;
+//	}
+//	// check if there is a destructor
+//	bool has_destructor = false;
+//	for (idx_t i = 0; i < aggregates.size(); i++) {
+//		if (aggregates[i].function.destructor) {
+//			has_destructor = true;
+//		}
+//	}
+//	if (!has_destructor) {
+//		return;
+//	}
+//	// there are aggregates with destructors: loop over the hash table
+//	// and call the destructor method for each of the aggregates
+//	data_ptr_t data_pointers[STANDARD_VECTOR_SIZE];
+//	Vector state_vector(TypeId::POINTER, (data_ptr_t)data_pointers);
+//	idx_t count = 0;
+//	for (data_ptr_t ptr = data, end = data + capacity * tuple_size; ptr < end; ptr += tuple_size) {
+//		if (*ptr == FULL_CELL) {
+//			// found entry
+//			data_pointers[count++] = ptr + FLAG_SIZE + group_width;
+//			if (count == STANDARD_VECTOR_SIZE) {
+//				// vector is full: call the destructors
+//				CallDestructors(state_vector, count);
+//				count = 0;
+//			}
+//		}
+//	}
+//	CallDestructors(state_vector, count);
 }
 
 void SuperLargeHashTable::Resize(idx_t size) {
@@ -148,72 +154,84 @@ void SuperLargeHashTable::Resize(idx_t size) {
 	bitmask = size - 1;
 
 	if (entries > 0) {
-		auto new_table = make_unique<SuperLargeHashTable>(size, group_types, payload_types, aggregates, parallel);
-
-		DataChunk groups;
-		groups.Initialize(group_types);
-
-		Vector addresses(TypeId::POINTER);
-		auto data_pointers = FlatVector::GetData<data_ptr_t>(addresses);
-
-		data_ptr_t ptr = data;
-		data_ptr_t end = data + capacity * tuple_size;
-
-		assert(new_table->tuple_size == this->tuple_size);
-
-		while (true) {
-			groups.Reset();
-
-			// scan the table for full cells starting from the scan position
-			idx_t found_entries = 0;
-			for (; ptr < end && found_entries < STANDARD_VECTOR_SIZE; ptr += tuple_size) {
-				if (*ptr == FULL_CELL) {
-					// found entry
-					data_pointers[found_entries++] = ptr + FLAG_SIZE;
-				}
-			}
-			if (found_entries == 0) {
-				break;
-			}
-			// fetch the group columns
-			groups.SetCardinality(found_entries);
-			for (idx_t i = 0; i < groups.column_count(); i++) {
-				auto &column = groups.data[i];
-				VectorOperations::Gather::Set(addresses, column, found_entries);
-			}
-
-			groups.Verify();
-			assert(groups.size() == found_entries);
-			Vector new_addresses(TypeId::POINTER);
-			new_table->FindOrCreateGroups(groups, new_addresses);
-
-			// NB: both address vectors already point to the payload start
-			assert(addresses.type == new_addresses.type && addresses.type == TypeId::POINTER);
-
-			auto new_address_data = FlatVector::GetData<data_ptr_t>(new_addresses);
-			for (idx_t i = 0; i < found_entries; i++) {
-				memcpy(new_address_data[i], data_pointers[i], payload_width);
-			}
-		}
-
-		assert(this->entries == new_table->entries);
-
-		this->data = move(new_table->data);
-		this->owned_data = move(new_table->owned_data);
-		this->capacity = new_table->capacity;
-		this->string_heap.MergeHeap(new_table->string_heap);
-		new_table->data = nullptr;
+		assert(0);
+		// FIXME
+//		auto new_table = make_unique<SuperLargeHashTable>(size, group_types, payload_types, aggregates, parallel);
+//
+//		DataChunk groups;
+//		groups.Initialize(group_types);
+//
+//		Vector addresses(TypeId::POINTER);
+//		auto data_pointers = FlatVector::GetData<data_ptr_t>(addresses);
+//
+//		data_ptr_t ptr = data;
+//		data_ptr_t end = data + capacity * tuple_size;
+//
+//		assert(new_table->tuple_size == this->tuple_size);
+//
+//		while (true) {
+//			groups.Reset();
+//
+//			// scan the table for full cells starting from the scan position
+//			idx_t found_entries = 0;
+//			for (; ptr < end && found_entries < STANDARD_VECTOR_SIZE; ptr += tuple_size) {
+//				if (*ptr == FULL_CELL) {
+//					// found entry
+//					data_pointers[found_entries++] = ptr + FLAG_SIZE;
+//				}
+//			}
+//			if (found_entries == 0) {
+//				break;
+//			}
+//			// fetch the group columns
+//			groups.SetCardinality(found_entries);
+//			for (idx_t i = 0; i < groups.column_count(); i++) {
+//				auto &column = groups.data[i];
+//				VectorOperations::Gather::Set(addresses, column, found_entries);
+//			}
+//
+//			groups.Verify();
+//			assert(groups.size() == found_entries);
+//			Vector new_addresses(TypeId::POINTER);
+//			new_table->FindOrCreateGroups(groups, new_addresses);
+//
+//			// NB: both address vectors already point to the payload start
+//			assert(addresses.type == new_addresses.type && addresses.type == TypeId::POINTER);
+//
+//			auto new_address_data = FlatVector::GetData<data_ptr_t>(new_addresses);
+//			for (idx_t i = 0; i < found_entries; i++) {
+//				memcpy(new_address_data[i], data_pointers[i], payload_width);
+//			}
+//		}
+//
+//		assert(this->entries == new_table->entries);
+//
+//		this->data = move(new_table->data);
+//		this->owned_data = move(new_table->owned_data);
+//		this->capacity = new_table->capacity;
+//		this->string_heap.MergeHeap(new_table->string_heap);
+//		new_table->data = nullptr;
 	} else {
-		data = new data_t[size * tuple_size];
-		owned_data = unique_ptr<data_t[]>(data);
-		for (idx_t i = 0; i < size; i++) {
-			data[i * tuple_size] = EMPTY_CELL;
-		}
+//		data = new data_t[size * tuple_size];
+//		owned_data = unique_ptr<data_t[]>(data);
+//		for (idx_t i = 0; i < size; i++) {
+//			data[i * tuple_size] = EMPTY_CELL;
+//		}
+
+        data1 = new data_t[size * tuple1_size];
+        data2 = new data_t[size * tuple2_size];
+
+        owned_data1 = unique_ptr<data_t[]>(data1);
+        owned_data2 = unique_ptr<data_t[]>(data2);
+
+        for (idx_t i = 0; i < size; i++) {
+            data1[i * tuple1_size] = EMPTY_CELL;
+        }
 
 		capacity = size;
 	}
 
-	endptr = data + tuple_size * capacity;
+	endptr = data1 + tuple1_size * capacity;
 }
 
 void SuperLargeHashTable::AddChunk(DataChunk &groups, DataChunk &payload) {
@@ -223,8 +241,17 @@ void SuperLargeHashTable::AddChunk(DataChunk &groups, DataChunk &payload) {
 
 	Vector addresses(TypeId::POINTER);
 	FindOrCreateGroups(groups, addresses);
+	// TODO fold the finding of the payload addresses into FindOrCreateGroups
+    Vector payload_addresses(TypeId::POINTER);
 
-	// now every cell has an entry
+    UnaryExecutor::Execute<data_ptr_t, data_ptr_t>(addresses, payload_addresses, groups.size(), [&](data_ptr_t element) {
+      return *((data_ptr_t*)(element + FLAG_SIZE)) + group_width;
+    });
+    addresses.Print(groups.size());
+
+    payload_addresses.Print(groups.size());
+
+    // now every cell has an entry
 	// update the aggregates
 	idx_t payload_idx = 0;
 
@@ -235,50 +262,52 @@ void SuperLargeHashTable::AddChunk(DataChunk &groups, DataChunk &payload) {
 		auto &aggr = aggregates[aggr_idx];
 		auto input_count = max((idx_t)1, (idx_t)aggr.child_count);
 		if (aggr.distinct) {
-			// construct chunk for secondary hash table probing
-			vector<TypeId> probe_types(group_types);
-			for (idx_t i = 0; i < aggr.child_count; i++) {
-				probe_types.push_back(payload_types[payload_idx]);
-			}
-			DataChunk probe_chunk;
-			probe_chunk.Initialize(probe_types);
-			for (idx_t group_idx = 0; group_idx < group_types.size(); group_idx++) {
-				probe_chunk.data[group_idx].Reference(groups.data[group_idx]);
-			}
-			for (idx_t i = 0; i < aggr.child_count; i++) {
-				probe_chunk.data[group_types.size() + i].Reference(payload.data[payload_idx + i]);
-			}
-			probe_chunk.SetCardinality(groups);
-			probe_chunk.Verify();
-
-			Vector dummy_addresses(TypeId::POINTER);
-			SelectionVector new_groups(STANDARD_VECTOR_SIZE);
-			// this is the actual meat, find out which groups plus payload
-			// value have not been seen yet
-			idx_t new_group_count =
-			    distinct_hashes[aggr_idx]->FindOrCreateGroups(probe_chunk, dummy_addresses, new_groups);
-
-			// now fix up the payload and addresses accordingly by creating
-			// a selection vector
-			if (new_group_count > 0) {
-				Vector distinct_addresses;
-				distinct_addresses.Slice(addresses, new_groups, new_group_count);
-				for (idx_t i = 0; i < aggr.child_count; i++) {
-					payload.data[payload_idx + i].Slice(new_groups, new_group_count);
-					payload.data[payload_idx + i].Verify(new_group_count);
-				}
-
-				distinct_addresses.Verify(new_group_count);
-
-				aggr.function.update(&payload.data[payload_idx], input_count, distinct_addresses, new_group_count);
-			}
+			assert(0);
+//			// construct chunk for secondary hash table probing
+//			vector<TypeId> probe_types(group_types);
+//			for (idx_t i = 0; i < aggr.child_count; i++) {
+//				probe_types.push_back(payload_types[payload_idx]);
+//			}
+//			DataChunk probe_chunk;
+//			probe_chunk.Initialize(probe_types);
+//			for (idx_t group_idx = 0; group_idx < group_types.size(); group_idx++) {
+//				probe_chunk.data[group_idx].Reference(groups.data[group_idx]);
+//			}
+//			for (idx_t i = 0; i < aggr.child_count; i++) {
+//				probe_chunk.data[group_types.size() + i].Reference(payload.data[payload_idx + i]);
+//			}
+//			probe_chunk.SetCardinality(groups);
+//			probe_chunk.Verify();
+//
+//			Vector dummy_addresses(TypeId::POINTER);
+//			SelectionVector new_groups(STANDARD_VECTOR_SIZE);
+//			// this is the actual meat, find out which groups plus payload
+//			// value have not been seen yet
+//			idx_t new_group_count =
+//			    distinct_hashes[aggr_idx]->FindOrCreateGroups(probe_chunk, dummy_addresses, new_groups);
+//
+//			// now fix up the payload and addresses accordingly by creating
+//			// a selection vector
+//			if (new_group_count > 0) {
+//				Vector distinct_addresses;
+//				distinct_addresses.Slice(addresses, new_groups, new_group_count);
+//				for (idx_t i = 0; i < aggr.child_count; i++) {
+//					payload.data[payload_idx + i].Slice(new_groups, new_group_count);
+//					payload.data[payload_idx + i].Verify(new_group_count);
+//				}
+//
+//				distinct_addresses.Verify(new_group_count);
+//
+//				aggr.function.update(&payload.data[payload_idx], input_count, distinct_addresses, new_group_count);
+//			}
 		} else {
-			aggr.function.update(&payload.data[payload_idx], input_count, addresses, payload.size());
+
+            aggr.function.update(&payload.data[payload_idx], input_count, payload_addresses, payload.size());
 		}
 
 		// move to the next aggregate
 		payload_idx += input_count;
-		VectorOperations::AddInPlace(addresses, aggr.payload_size, payload.size());
+		VectorOperations::AddInPlace(payload_addresses, aggr.payload_size, payload.size());
 	}
 }
 
@@ -314,7 +343,7 @@ void SuperLargeHashTable::HashGroups(DataChunk &groups, Vector &addresses) {
 	// multiply the position by the tuple size and add the base address
 	UnaryExecutor::Execute<hash_t, data_ptr_t>(hashes, addresses, groups.size(), [&](hash_t element) {
 		assert((element & bitmask) == (element % capacity));
-		return data + ((element & bitmask) * tuple_size);
+		return data1 + ((element & bitmask) * tuple1_size);
 	});
 }
 
@@ -507,10 +536,10 @@ idx_t SuperLargeHashTable::FindOrCreateGroups(DataChunk &groups, Vector &address
 	HashGroups(groups, addresses);
 
 	addresses.Normalify(groups.size());
-	auto data_pointers = FlatVector::GetData<data_ptr_t>(addresses);
+	auto addresses_data = FlatVector::GetData<data_ptr_t>(addresses);
 
-	data_ptr_t group_pointers[STANDARD_VECTOR_SIZE];
-	Vector pointers(TypeId::POINTER, (data_ptr_t)group_pointers);
+	data_ptr_t group_pointers_data[STANDARD_VECTOR_SIZE];
+	Vector group_pointers(TypeId::POINTER, (data_ptr_t)group_pointers_data);
 
 	// set up the selection vectors
 	SelectionVector v1(STANDARD_VECTOR_SIZE);
@@ -524,10 +553,12 @@ idx_t SuperLargeHashTable::FindOrCreateGroups(DataChunk &groups, Vector &address
 	idx_t remaining_entries = groups.size();
 
 	// orrify all the groups
-	auto group_data = unique_ptr<VectorData[]>(new VectorData[groups.column_count()]);
+	auto groups_data = unique_ptr<VectorData[]>(new VectorData[groups.column_count()]);
 	for (idx_t grp_idx = 0; grp_idx < groups.column_count(); grp_idx++) {
-		groups.data[grp_idx].Orrify(groups.size(), group_data[grp_idx]);
+		groups.data[grp_idx].Orrify(groups.size(), groups_data[grp_idx]);
 	}
+
+	addresses.Print(groups.size());
 
 	idx_t new_group_count = 0;
 	while (remaining_entries > 0) {
@@ -537,38 +568,42 @@ idx_t SuperLargeHashTable::FindOrCreateGroups(DataChunk &groups, Vector &address
 		// first figure out for each remaining whether or not it belongs to a full or empty group
 		for (idx_t i = 0; i < remaining_entries; i++) {
 			idx_t index = sel_vector->get_index(i);
-			auto entry = data_pointers[index];
+			auto entry = addresses_data[index];
 			if (*entry == EMPTY_CELL) {
 				// cell is empty; mark the cell as filled
 				*entry = FULL_CELL;
 				empty_vector.set_index(empty_count++, index);
 				new_groups.set_index(new_group_count++, index);
-				// initialize the payload info for the column
-				memcpy(entry + FLAG_SIZE + group_width, empty_payload_data.get(), payload_width);
-			} else {
+                *((data_ptr_t*)(entry + FLAG_SIZE)) = data2;
+
+                memcpy(data2 + group_width, empty_payload_data.get(), payload_width);
+                group_pointers_data[index] = data2;
+                data2 += tuple2_size;
+            } else {
 				// cell is occupied: add to check list
 				next_vector->set_index(entry_count++, index);
-			}
-			group_pointers[index] = entry + FLAG_SIZE;
-			data_pointers[index] = entry + FLAG_SIZE + group_width;
+				// populate/update the data pointer from the existing entry
+                group_pointers_data[index] = *((data_ptr_t*)(entry + FLAG_SIZE));
+            }
+			addresses_data[index] += tuple1_size;
 		}
 
 		if (empty_count > 0) {
 			// for each of the locations that are empty, serialize the group columns to the locations
-			ScatterGroups(groups, group_data, pointers, empty_vector, empty_count);
+			ScatterGroups(groups, groups_data, group_pointers, empty_vector, empty_count);
 			entries += empty_count;
 		}
 		// now we have only the tuples remaining that might match to an existing group
 		// start performing comparisons with each of the groups
-		idx_t no_match_count = CompareGroups(groups, group_data, pointers, *next_vector, entry_count, *no_match_vector);
+		idx_t no_match_count = CompareGroups(groups, groups_data, group_pointers, *next_vector, entry_count, *no_match_vector);
 
 		// each of the entries that do not match we move them to the next entry in the HT
 		for (idx_t i = 0; i < no_match_count; i++) {
 			idx_t index = no_match_vector->get_index(i);
-			data_pointers[index] += payload_width;
-			assert(((uint64_t)(data_pointers[index] - data)) % tuple_size == 0);
-			if (data_pointers[index] >= endptr) {
-				data_pointers[index] = data;
+//			addresses_data[index] += payload_width;
+			assert(((uint64_t)(addresses_data[index] - data1)) % tuple1_size == 0);
+			if (addresses_data[index] >= endptr) {
+				addresses_data[index] = data1;
 			}
 		}
 		sel_vector = no_match_vector;
@@ -586,8 +621,8 @@ void SuperLargeHashTable::FindOrCreateGroups(DataChunk &groups, Vector &addresse
 
 idx_t SuperLargeHashTable::Scan(idx_t &scan_position, DataChunk &groups, DataChunk &result) {
 	data_ptr_t ptr;
-	data_ptr_t start = data + scan_position;
-	data_ptr_t end = data + capacity * tuple_size;
+	data_ptr_t start = data1 + scan_position;
+	data_ptr_t end = data1 + capacity * tuple1_size;
 	if (start >= end) {
 		return 0;
 	}
@@ -597,7 +632,7 @@ idx_t SuperLargeHashTable::Scan(idx_t &scan_position, DataChunk &groups, DataChu
 
 	// scan the table for full cells starting from the scan position
 	idx_t entry = 0;
-	for (ptr = start; ptr < end && entry < STANDARD_VECTOR_SIZE; ptr += tuple_size) {
+	for (ptr = start; ptr < end && entry < STANDARD_VECTOR_SIZE; ptr += tuple1_size) {
 		if (*ptr == FULL_CELL) {
 			// found entry
 			data_pointers[entry++] = ptr + FLAG_SIZE;
@@ -621,6 +656,6 @@ idx_t SuperLargeHashTable::Scan(idx_t &scan_position, DataChunk &groups, DataChu
 
 		VectorOperations::AddInPlace(addresses, aggr.payload_size, groups.size());
 	}
-	scan_position = ptr - data;
+	scan_position = ptr - data1;
 	return entry;
 }
